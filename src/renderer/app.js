@@ -691,7 +691,9 @@ function gradeCard(course) {
   } else {
     const empty = document.createElement('p');
     empty.className = 'grade-detail-empty';
-    empty.textContent = '本门课程暂未返回平时、卷面等成绩分项';
+    empty.textContent = state.grades?.detailStatus?.complete === false
+      ? '本次有部分成绩分项读取失败，可重新导入成绩补查'
+      : '教务系统未返回本门课程已公布的成绩分项';
     components.append(empty);
   }
   detailPanel.append(detailHeading, components);
@@ -711,6 +713,11 @@ function renderGrades({ rebuildTerms = false } = {}) {
   $('#scoreCourseCount').textContent = `${summary.scoreCourseCount} 门参与`;
   $('#gradePointCourseCount').textContent = `${summary.gradePointCourseCount} 门参与`;
   $('#gradeResultCount').textContent = `${courses.length} 门`;
+  const detailStatus = state.grades?.detailStatus;
+  $('#gradeDetailCoverage').textContent = detailStatus
+    ? `分项 ${Number(detailStatus.courseCount) || 0}/${Number(detailStatus.totalCourseCount) || state.grades.courses?.length || 0} 门`
+    : '分项尚未读取';
+  $('#gradeDetailCoverage').title = detailStatus?.message || '显示教务系统已返回成绩分项的课程数量';
   $('#gradeUpdatedAt').textContent = state.grades?.syncedAt ? formatSyncedAt(state.grades.syncedAt) : '尚未读取';
   $('#gradeLoading').classList.toggle('hidden', !state.gradesLoading);
   const list = $('#gradeList');
@@ -810,8 +817,9 @@ async function syncGrades({ quiet = false, authRetry = true } = {}) {
     renderGrades({ rebuildTerms: true });
     if (!quiet) {
       const detailCount = Number(result.grades.detailStatus?.courseCount) || 0;
+      const totalCount = result.grades.courses.length;
       const suffix = detailCount
-        ? `，${detailCount} 门含成绩分项`
+        ? `，成绩分项 ${detailCount}/${totalCount} 门`
         : (result.grades.detailStatus?.message ? '；成绩分项暂未返回' : '');
       toast(`已读取 ${result.grades.courses.length} 门课程成绩${suffix}`);
     }

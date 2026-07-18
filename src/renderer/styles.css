@@ -364,6 +364,8 @@ input, select { user-select: text; }
 }
 .grade-list-heading { min-height: 40px; display: flex; align-items: flex-start; justify-content: space-between; padding: 1px 5px 12px; color: var(--text-muted); font-size: 11px; }
 .grade-list-heading > div { display: flex; align-items: baseline; gap: 8px; }
+.grade-list-heading .grade-list-meta { align-items: center; gap: 12px; }
+.grade-list-meta #gradeDetailCoverage { padding: 4px 8px; border-radius: 99px; color: var(--mint); background: rgba(98,214,173,.08); font-size: 10px; }
 .grade-list-heading h2 { margin: 0; color: var(--text); font-size: 18px; }
 .grade-list { flex: 1; min-height: 0; padding: 2px 4px 18px; display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 12px; overflow-y: auto; }
 .grade-list::-webkit-scrollbar { width: 8px; }.grade-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.13); border: 2px solid transparent; background-clip: padding-box; border-radius: 99px; }
