@@ -45,12 +45,12 @@
 
 ## 下载
 
-[**下载矿大课表 v1.0.1 安装包**](https://github.com/Ye111ow/cumt-schedule-desktop/releases/download/v1.0.1/CUMT-Schedule-Setup-1.0.1.exe)
+[**下载矿大课表 v1.0.2 安装包**](https://github.com/Ye111ow/cumt-schedule-desktop/releases/download/v1.0.2/CUMT-Schedule-Setup-1.0.2.exe)
 
 安装包 SHA-256：
 
 ```text
-7DB365A2F9C89126B33411E9C0BCA95181FA23B153A8195D61F7DC00A58B438A
+C33580339E6725BEA305AEAAAE7D3B71C3A28C701F658E3312FBB4A2CBFB1C68
 ```
 
 当前安装包没有商业代码签名证书，Windows SmartScreen 可能在首次运行时提示“未知发布者”。请从本仓库 Releases 下载，并核对上面的 SHA-256。

@@ -1,6 +1,6 @@
 {
   "name": "cumt-schedule-desktop",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "中国矿业大学正方教务桌面课表与成绩工具",
   "main": "src/main.js",
   "author": "CUMT Schedule Desktop",
