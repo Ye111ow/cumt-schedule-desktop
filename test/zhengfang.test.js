@@ -166,6 +166,48 @@ test('grade query reads every server page even when the first response is incomp
   assert.equal(grades.detailStatus.totalGradePages, 2);
 });
 
+test('term component workbooks are exported sequentially to avoid Zhengfang session races', async () => {
+  let activeExports = 0;
+  let maximumConcurrentExports = 0;
+  const exportedFileNames = [];
+  const totalItems = [
+    { kcmc: '课程一', jxb_id: 'A01', xf: '2', cj: '90', xnmmc: '2024-2025', xqmmc: '第一学期' },
+    { kcmc: '课程二', jxb_id: 'A02', xf: '2', cj: '91', xnmmc: '2024-2025', xqmmc: '第二学期' },
+    { kcmc: '课程三', jxb_id: 'A03', xf: '2', cj: '92', xnmmc: '2025-2026', xqmmc: '第一学期' }
+  ];
+  const session = {
+    async fetch(url, options) {
+      if (!url.includes('cjcx_dcXsKccjList.html')) {
+        return new Response(JSON.stringify({ items: totalItems }), { status: 200 });
+      }
+      const form = new URLSearchParams(options.body);
+      activeExports += 1;
+      maximumConcurrentExports = Math.max(maximumConcurrentExports, activeExports);
+      exportedFileNames.push(form.get('fileName'));
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const key = `${form.get('xnm')}:${form.get('xqm')}`;
+      const item = {
+        '2024:3': totalItems[0],
+        '2024:12': totalItems[1],
+        '2025:3': totalItems[2]
+      }[key];
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+        ['学年', '学期', '教学班ID', '学分', '课程名称', '成绩', '成绩分项'],
+        [item.xnmmc, item.xqmmc, item.jxb_id, item.xf, item.kcmc, item.cj, '平时成绩']
+      ]), '成绩分项');
+      activeExports -= 1;
+      return new Response(XLSX.write(workbook, { type: 'buffer', bookType: 'biff8' }), {
+        status: 200, headers: { 'content-type': 'application/vnd.ms-excel' }
+      });
+    }
+  };
+  const grades = await new ZhengfangClient(session).getGrades();
+  assert.equal(maximumConcurrentExports, 1);
+  assert.equal(new Set(exportedFileNames).size, 3);
+  assert.equal(grades.detailStatus.courseCount, 3);
+});
+
 test('grade query falls back to the JSON component endpoint for unmatched courses', async () => {
   const session = {
     async fetch(url) {

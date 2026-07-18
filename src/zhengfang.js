@@ -353,12 +353,14 @@ class ZhengfangClient {
 
     const exportedRows = [];
     const exportErrors = [];
-    for (let index = 0; index < termQueries.length; index += 3) {
-      const batch = termQueries.slice(index, index + 3);
-      const results = await Promise.allSettled(batch.map(([year, semester]) => this.getGradeDetailRows(year, semester)));
-      for (const result of results) {
-        if (result.status === 'fulfilled') exportedRows.push(...result.value);
-        else exportErrors.push(result.reason);
+    // Zhengfang's XLS export is stateful on some deployments. Concurrent exports in the
+    // same login session can return another term's temporary workbook, so keep these
+    // requests strictly sequential even though the JSON queries below are safe to batch.
+    for (const [year, semester] of termQueries) {
+      try {
+        exportedRows.push(...await this.getGradeDetailRows(year, semester));
+      } catch (error) {
+        exportErrors.push(error);
       }
     }
     const initiallyMerged = mergeGradeDetails(grades, uniqueGradeDetailRows(exportedRows));
@@ -462,7 +464,8 @@ class ZhengfangClient {
       form.append('exportModel.selectCol', column);
     }
     form.append('exportModel.exportWjgs', 'xls');
-    form.append('fileName', '成绩分项');
+    const termLabel = normalizedTerm || 'all';
+    form.append('fileName', `成绩分项-${Number(academicYear) || 'all'}-${termLabel}`);
 
     const endpoint = this.url('cjcx/cjcx_dcXsKccjList.html');
     const response = await this.request(endpoint, {
