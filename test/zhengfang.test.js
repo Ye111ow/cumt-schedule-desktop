@@ -116,7 +116,7 @@ test('grade query follows Zhengfang personal-grade endpoint and keeps component 
       const form = new URLSearchParams(options.body);
       assert.equal(form.get('xnm'), '2025');
       assert.equal(form.get('xqm'), '3');
-      assert.equal(form.get('queryModel.showCount'), '500');
+      assert.equal(form.get('queryModel.showCount'), '5000');
       return new Response(JSON.stringify({ items: [{
         xh: '01', xm: '同学', kcmc: '算法设计', jxb_id: 'A01', xf: '3', cj: '88', jd: '4',
         pscj: '90', qmcj: '87', xnmmc: '2025-2026', xqmmc: '第一学期'
@@ -133,6 +133,66 @@ test('grade query follows Zhengfang personal-grade endpoint and keeps component 
   ]);
   assert.equal(grades.detailStatus.courseCount, 1);
   assert.equal(grades.summary.weightedScore, 88);
+});
+
+test('grade query reads every server page even when the first response is incomplete', async () => {
+  const requestedPages = [];
+  const session = {
+    async fetch(url, options) {
+      if (url.includes('cjcx_dcXsKccjList.html')) {
+        const workbook = XLSX.utils.book_new();
+        const sheet = XLSX.utils.aoa_to_sheet([
+          ['学年', '学期', '教学班ID', '学分', '课程名称', '成绩', '成绩分项'],
+          ['2025-2026', '第一学期', 'A01', '2', '课程一', '90', '平时成绩'],
+          ['2025-2026', '第一学期', 'A02', '3', '课程二', '91', '平时成绩']
+        ]);
+        XLSX.utils.book_append_sheet(workbook, sheet, '成绩分项');
+        return new Response(XLSX.write(workbook, { type: 'buffer', bookType: 'biff8' }), {
+          status: 200, headers: { 'content-type': 'application/vnd.ms-excel' }
+        });
+      }
+      const form = new URLSearchParams(options.body);
+      const page = Number(form.get('queryModel.currentPage'));
+      requestedPages.push(page);
+      const item = page === 1
+        ? { kcmc: '课程一', jxb_id: 'A01', xf: '2', cj: '90', xnmmc: '2025-2026', xqmmc: '第一学期' }
+        : { kcmc: '课程二', jxb_id: 'A02', xf: '3', cj: '91', xnmmc: '2025-2026', xqmmc: '第一学期' };
+      return new Response(JSON.stringify({ items: [item], totalPage: 2, totalResult: 2 }), { status: 200 });
+    }
+  };
+  const grades = await new ZhengfangClient(session).getGrades(2025, 1);
+  assert.deepEqual(requestedPages, [1, 2]);
+  assert.equal(grades.courses.length, 2);
+  assert.equal(grades.detailStatus.totalGradePages, 2);
+});
+
+test('grade query falls back to the JSON component endpoint for unmatched courses', async () => {
+  const session = {
+    async fetch(url) {
+      if (url.includes('cjcx_dcXsKccjList.html')) {
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+          ['学年', '学期', '教学班ID', '学分', '课程名称', '成绩', '成绩分项']
+        ]), '成绩分项');
+        return new Response(XLSX.write(workbook, { type: 'buffer', bookType: 'biff8' }), {
+          status: 200, headers: { 'content-type': 'application/vnd.ms-excel' }
+        });
+      }
+      if (url.includes('cjjdcx_cxXsjdxmcjIndex.html')) {
+        return new Response(JSON.stringify({ items: [{
+          xnmc: '2025-2026', xqmc: '3', jxb_id: 'A01', xf: '3', kcmc: '算法设计',
+          xmblmc: '期末卷面（70%）', xmcj: '86'
+        }] }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ items: [{
+        kcmc: '算法设计', jxb_id: 'A01', xf: '3', cj: '88', xnmmc: '2025-2026', xqmmc: '第一学期'
+      }] }), { status: 200 });
+    }
+  };
+  const grades = await new ZhengfangClient(session).getGrades(2025, 1);
+  assert.deepEqual(grades.courses[0].scoreDetails, [{ label: '期末卷面（70%）', score: '86' }]);
+  assert.equal(grades.detailStatus.componentRowCount, 1);
+  assert.equal(grades.detailStatus.courseCount, 1);
 });
 
 test('grade query reports an expired login page', async () => {

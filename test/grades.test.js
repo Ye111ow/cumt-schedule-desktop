@@ -6,6 +6,7 @@ const {
   QUALITATIVE_SCORES,
   calculateGradeSummary,
   mergeGradeDetails,
+  normalizeGradeDetailItems,
   normalizeGrades,
   parseGradeDetailMatrix,
   qualitativeScore
@@ -75,4 +76,19 @@ test('parses dynamic grade-detail columns and merges every returned component', 
   assert.equal(merged.courses[0].midtermScore, '88');
   assert.equal(merged.courses[0].examScore, '96');
   assert.equal(merged.detailStatus.courseCount, 1);
+});
+
+test('normalizes JSON component rows and tolerates course-name typography differences', () => {
+  const rows = normalizeGradeDetailItems([{
+    xnmc: '2025-2026', xqmc: '12', jxb_id: 'A'.repeat(32), xf: '3',
+    kcmc: '程序设计综合实践 (CSP)', xmblmc: '期末卷面（70%）', xmcj: '89'
+  }]);
+  const grades = normalizeGrades({ items: [{
+    xnmmc: '2025-2026', xqmmc: '第二学期', jxb_id: `${'A'.repeat(32)}-08242694`, xf: '3.0',
+    kcmc: '程序设计综合实践（CSP）', cj: '89'
+  }] });
+  const merged = mergeGradeDetails(grades, rows);
+  assert.deepEqual(merged.courses[0].scoreDetails, [{ label: '期末卷面（70%）', score: '89' }]);
+  assert.equal(merged.courses[0].examScore, '89');
+  assert.equal(merged.detailStatus.missingCourseCount, 0);
 });

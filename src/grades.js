@@ -65,7 +65,17 @@ function normalizeAcademicYear(value, fallback = 0) {
 }
 
 function cleanDetailCell(value) {
-  return String(value ?? '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+  return String(value ?? '')
+    .replace(/[\u00a0\u200b-\u200d\ufeff]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function canonicalCourseText(value) {
+  return cleanDetailCell(value)
+    .normalize('NFKC')
+    .toLocaleLowerCase('zh-CN')
+    .replace(/[\s·•・()（）\[\]【】《》<>_—–-]+/g, '');
 }
 
 function findDetailColumn(headers, patterns, excluded = new Set()) {
@@ -113,24 +123,53 @@ function parseGradeDetailMatrix(matrix = []) {
   }).filter((row) => row.title && row.label && row.score !== '');
 }
 
-function normalizedClassId(value) {
-  return cleanDetailCell(value).replace(/-[^-]+$/, '');
+function normalizeGradeDetailItems(items = []) {
+  return (Array.isArray(items) ? items : []).map((item) => ({
+    academicYear: cleanDetailCell(firstValue(item, ['xnmmc', 'xnmc', 'xnm', 'course_year'])),
+    term: cleanDetailCell(firstValue(item, ['xqmmc', 'xqmc', 'xqm', 'course_semester'])),
+    classId: cleanDetailCell(firstValue(item, ['jxb_id', 'jxbid', 'class_id'])),
+    credit: cleanDetailCell(firstValue(item, ['xf', 'credit'])),
+    title: cleanDetailCell(firstValue(item, ['kcmc', 'course_name', 'title'])),
+    label: cleanDetailCell(firstValue(item, ['xmblmc', 'xmmc', 'component_name', 'label'])),
+    score: cleanDetailCell(firstValue(item, ['xmcj', 'component_score', 'score']))
+  })).filter((row) => row.title && row.label && row.score !== '');
+}
+
+function classIdAliases(value) {
+  const normalized = cleanDetailCell(value).normalize('NFKC').toLocaleLowerCase('en-US').replace(/\s+/g, '');
+  if (!normalized) return new Set();
+  const aliases = new Set([normalized]);
+  const suffixMatch = normalized.match(/^([a-z0-9]{16,})-([a-z0-9_.]+)$/i);
+  if (suffixMatch) aliases.add(suffixMatch[1]);
+  return aliases;
+}
+
+function idsOverlap(left, right) {
+  const leftAliases = classIdAliases(left);
+  const rightAliases = classIdAliases(right);
+  return [...leftAliases].some((alias) => rightAliases.has(alias));
+}
+
+function sameCredit(left, right) {
+  const leftCredit = numericValue(left);
+  const rightCredit = numericValue(right);
+  return leftCredit === null || rightCredit === null || Math.abs(leftCredit - rightCredit) < 0.001;
 }
 
 function detailsForCourse(course, rows) {
   const exactClassId = cleanDetailCell(course.classId);
-  const baseClassId = normalizedClassId(exactClassId);
   let matches = exactClassId ? rows.filter((row) => cleanDetailCell(row.classId) === exactClassId) : [];
-  if (!matches.length && baseClassId) {
-    matches = rows.filter((row) => normalizedClassId(row.classId) === baseClassId);
+  if (!matches.length && exactClassId) {
+    matches = rows.filter((row) => idsOverlap(row.classId, exactClassId));
   }
   if (!matches.length) {
     matches = rows.filter((row) => {
-      if (cleanDetailCell(row.title) !== cleanDetailCell(course.title)) return false;
+      if (canonicalCourseText(row.title) !== canonicalCourseText(course.title)) return false;
       const rowYear = normalizeAcademicYear(row.academicYear);
       const rowTerm = normalizeTerm(row.term);
       return (!rowYear || !course.academicYear || rowYear === course.academicYear)
-        && (!rowTerm || !course.term || rowTerm === course.term);
+        && (!rowTerm || !course.term || rowTerm === course.term)
+        && sameCredit(row.credit, course.credit);
     });
   }
   const seen = new Set();
@@ -167,7 +206,9 @@ function mergeGradeDetails(grades, detailRows = []) {
     detailStatus: {
       available: rows.length > 0,
       rowCount: rows.length,
-      courseCount: matchedCourseCount
+      courseCount: matchedCourseCount,
+      missingCourseCount: Math.max(0, courses.length - matchedCourseCount),
+      totalCourseCount: courses.length
     }
   };
 }
@@ -262,6 +303,7 @@ module.exports = {
   QUALITATIVE_SCORES,
   calculateGradeSummary,
   mergeGradeDetails,
+  normalizeGradeDetailItems,
   normalizeGradeItem,
   normalizeGrades,
   numericValue,

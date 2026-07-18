@@ -45,12 +45,12 @@
 
 ## 下载
 
-[**下载矿大课表 v1.0.0 安装包**](https://github.com/Ye111ow/cumt-schedule-desktop/releases/download/v1.0.0/CUMT-Schedule-Setup-1.0.0.exe)
+[**下载矿大课表 v1.0.1 安装包**](https://github.com/Ye111ow/cumt-schedule-desktop/releases/download/v1.0.1/CUMT-Schedule-Setup-1.0.1.exe)
 
 安装包 SHA-256：
 
 ```text
-5C2A23BC6DC2629375450662A73C4924E1ADB6E11FB8481DBA8915BF0364A517
+7DB365A2F9C89126B33411E9C0BCA95181FA23B153A8195D61F7DC00A58B438A
 ```
 
 当前安装包没有商业代码签名证书，Windows SmartScreen 可能在首次运行时提示“未知发布者”。请从本仓库 Releases 下载，并核对上面的 SHA-256。
@@ -148,6 +148,7 @@
 | 个人课表 | `/jwglxt/kbcx/xskbcx_cxXsKb.html?gnmkdm=N2151` |
 | 个人成绩 | `/jwglxt/cjcx/cjcx_cxXsgrcj.html?doType=query&gnmkdm=N305005` |
 | 成绩分项 | `/jwglxt/cjcx/cjcx_dcXsKccjList.html` |
+| 成绩构成补查 | `/jwglxt/cjcx/cjjdcx_cxXsjdxmcjIndex.html?doType=query&gnmkdm=N305099` |
 
 正方接口和学校登录策略可能调整。如果导入突然失效，请先确认校园网和教务网页可正常访问，再提交 Issue。
 

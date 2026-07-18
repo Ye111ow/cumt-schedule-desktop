@@ -3,13 +3,20 @@
 const crypto = require('node:crypto');
 const XLSX = require('xlsx');
 const { normalizeSchedule } = require('./schedule');
-const { mergeGradeDetails, normalizeGrades, parseGradeDetailMatrix } = require('./grades');
+const {
+  mergeGradeDetails,
+  normalizeGradeDetailItems,
+  normalizeGrades,
+  parseGradeDetailMatrix
+} = require('./grades');
 
 const DEFAULT_BASE_URL = 'http://jwxt.cumt.edu.cn/jwglxt/';
 const DEFAULT_HEADERS = {
   'Accept-Language': 'zh-CN,zh;q=0.9',
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/138.0.0.0 Safari/537.36'
 };
+const GRADE_PAGE_SIZE = 5000;
+const MAX_GRADE_PAGES = 50;
 
 class ZhengfangError extends Error {
   constructor(message, code = 'SERVER_ERROR') {
@@ -58,6 +65,33 @@ function extractTip(html) {
 function isLoginPage(html) {
   return /<input\b[^>]*(?:id|name)=["']yhm["']/i.test(String(html))
     || /<h5[^>]*>\s*用户登录\s*<\/h5>/i.test(String(html));
+}
+
+function gradePayloadItems(payload) {
+  return Array.isArray(payload) ? payload : (Array.isArray(payload?.items) ? payload.items : []);
+}
+
+function gradePayloadPageCount(payload, pageSize = GRADE_PAGE_SIZE) {
+  if (Array.isArray(payload)) return 1;
+  const explicitPages = Number(payload?.totalPage ?? payload?.totalPages);
+  if (Number.isFinite(explicitPages) && explicitPages > 0) return Math.min(MAX_GRADE_PAGES, Math.ceil(explicitPages));
+  const totalRows = Number(payload?.totalResult ?? payload?.records ?? payload?.total);
+  if (Number.isFinite(totalRows) && totalRows > 0) {
+    return Math.min(MAX_GRADE_PAGES, Math.max(1, Math.ceil(totalRows / pageSize)));
+  }
+  return 1;
+}
+
+function uniqueGradeDetailRows(rows = []) {
+  const seen = new Set();
+  return rows.filter((row) => {
+    const key = [row.academicYear, row.term, row.classId, row.credit, row.title, row.label, row.score]
+      .map((value) => String(value ?? '').normalize('NFKC').replace(/\s+/g, '').toLocaleLowerCase('zh-CN'))
+      .join('\u0000');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function base64Url(value) {
@@ -241,21 +275,8 @@ class ZhengfangClient {
     return normalizeSchedule(payload, academicYear, term);
   }
 
-  async getGrades(academicYear = 0, term = 0) {
-    const normalizedTerm = Number(term);
-    const xqm = normalizedTerm === 1 ? '3' : (normalizedTerm === 2 ? '12' : '');
-    const form = new URLSearchParams({
-      xnm: Number(academicYear) > 0 ? String(Number(academicYear)) : '',
-      xqm,
-      _search: 'false',
-      nd: String(Date.now()),
-      'queryModel.showCount': '500',
-      'queryModel.currentPage': '1',
-      'queryModel.sortName': '',
-      'queryModel.sortOrder': 'asc',
-      time: '0'
-    });
-    const endpoint = this.url('cjcx/cjcx_cxXsgrcj.html?doType=query&gnmkdm=N305005');
+  async postGradeJSON(relative, form, invalidMessage = '教务系统返回了无法识别的成绩数据') {
+    const endpoint = this.url(relative);
     const response = await this.request(endpoint, {
       method: 'POST',
       headers: {
@@ -278,12 +299,47 @@ class ZhengfangClient {
     if (!response.ok) {
       throw new ZhengfangError(`教务系统返回异常状态（HTTP ${response.status}），请稍后重试`, 'SERVER_ERROR');
     }
-    let payload;
     try {
-      payload = JSON.parse(text);
+      return JSON.parse(text);
     } catch {
-      throw new ZhengfangError('教务系统返回了无法识别的成绩数据', 'RESPONSE_CHANGED');
+      throw new ZhengfangError(invalidMessage, 'RESPONSE_CHANGED');
     }
+  }
+
+  async getPersonalGradePage(academicYear = 0, term = 0, currentPage = 1) {
+    const normalizedTerm = Number(term);
+    const xqm = normalizedTerm === 1 ? '3' : (normalizedTerm === 2 ? '12' : '');
+    const form = new URLSearchParams({
+      xnm: Number(academicYear) > 0 ? String(Number(academicYear)) : '',
+      xqm,
+      _search: 'false',
+      nd: String(Date.now()),
+      'queryModel.showCount': String(GRADE_PAGE_SIZE),
+      'queryModel.currentPage': String(currentPage),
+      'queryModel.sortName': '',
+      'queryModel.sortOrder': 'asc',
+      time: '0'
+    });
+    return this.postGradeJSON(
+      'cjcx/cjcx_cxXsgrcj.html?doType=query&gnmkdm=N305005',
+      form
+    );
+  }
+
+  async getGrades(academicYear = 0, term = 0) {
+    const firstPayload = await this.getPersonalGradePage(academicYear, term, 1);
+    const pageCount = gradePayloadPageCount(firstPayload);
+    const allItems = [...gradePayloadItems(firstPayload)];
+    for (let page = 2; page <= pageCount; page += 3) {
+      const pageNumbers = Array.from({ length: Math.min(3, pageCount - page + 1) }, (_, offset) => page + offset);
+      const payloads = await Promise.all(pageNumbers.map((pageNumber) => (
+        this.getPersonalGradePage(academicYear, term, pageNumber)
+      )));
+      for (const payload of payloads) allItems.push(...gradePayloadItems(payload));
+    }
+    const payload = Array.isArray(firstPayload)
+      ? allItems
+      : { ...firstPayload, items: allItems, currentPage: pageCount, totalPage: pageCount };
     const grades = normalizeGrades(payload, academicYear, term);
     const requestedYear = Number(academicYear) || 0;
     const requestedTerm = Number(term) || 0;
@@ -295,27 +351,95 @@ class ZhengfangClient {
         .map((key) => key.split(':').map(Number));
     if (!termQueries.length) termQueries.push([0, 0]);
 
-    const detailRows = [];
-    const errors = [];
+    const exportedRows = [];
+    const exportErrors = [];
     for (let index = 0; index < termQueries.length; index += 3) {
       const batch = termQueries.slice(index, index + 3);
       const results = await Promise.allSettled(batch.map(([year, semester]) => this.getGradeDetailRows(year, semester)));
       for (const result of results) {
-        if (result.status === 'fulfilled') detailRows.push(...result.value);
-        else errors.push(result.reason);
+        if (result.status === 'fulfilled') exportedRows.push(...result.value);
+        else exportErrors.push(result.reason);
       }
     }
+    const initiallyMerged = mergeGradeDetails(grades, uniqueGradeDetailRows(exportedRows));
+    const fallbackTermQueries = [...new Set(initiallyMerged.courses
+      .filter((course) => !course.scoreDetails?.length && course.academicYear && course.term)
+      .map((course) => `${course.academicYear}:${course.term}`))]
+      .map((key) => key.split(':').map(Number));
+
+    const componentRows = [];
+    const componentErrors = [];
+    for (let index = 0; index < fallbackTermQueries.length; index += 3) {
+      const batch = fallbackTermQueries.slice(index, index + 3);
+      const results = await Promise.allSettled(batch.map(([year, semester]) => this.getGradeComponentRows(year, semester)));
+      for (const result of results) {
+        if (result.status === 'fulfilled') componentRows.push(...result.value);
+        else componentErrors.push(result.reason);
+      }
+    }
+
+    const detailRows = uniqueGradeDetailRows([...exportedRows, ...componentRows]);
     const merged = mergeGradeDetails(grades, detailRows);
+    const detailComplete = exportErrors.length === 0 || merged.detailStatus.missingCourseCount === 0;
+    let detailMessage = '';
+    if (exportErrors.length && !detailRows.length) {
+      detailMessage = exportErrors[0]?.message || '成绩分项暂时无法读取';
+    } else if (exportErrors.length) {
+      detailMessage = '部分学期的成绩分项暂时无法读取';
+    } else if (!detailRows.length) {
+      detailMessage = '教务系统未返回已发布的成绩分项';
+    } else if (merged.detailStatus.missingCourseCount > 0) {
+      detailMessage = `${merged.detailStatus.courseCount}/${merged.detailStatus.totalCourseCount} 门课程返回了成绩分项`;
+    }
     return {
       ...merged,
       detailStatus: {
         ...merged.detailStatus,
-        complete: errors.length === 0,
-        message: errors.length
-          ? (detailRows.length ? '部分学期的成绩分项暂时无法读取' : (errors[0]?.message || '成绩分项暂时无法读取'))
-          : (detailRows.length ? '' : '教务系统未返回已发布的成绩分项')
+        complete: detailComplete,
+        message: detailMessage,
+        totalGradePages: pageCount,
+        exportRowCount: exportedRows.length,
+        componentRowCount: componentRows.length,
+        exportErrorCount: exportErrors.length,
+        componentErrorCount: componentErrors.length
       }
     };
+  }
+
+  async getGradeComponentPage(academicYear = 0, term = 0, currentPage = 1) {
+    const normalizedTerm = Number(term);
+    const xqm = normalizedTerm === 1 ? '3' : (normalizedTerm === 2 ? '12' : '');
+    const form = new URLSearchParams({
+      xnm: Number(academicYear) > 0 ? String(Number(academicYear)) : '',
+      xqm,
+      xh: '',
+      _search: 'false',
+      nd: String(Date.now()),
+      'queryModel.showCount': String(GRADE_PAGE_SIZE),
+      'queryModel.currentPage': String(currentPage),
+      'queryModel.sortName': 'kch',
+      'queryModel.sortOrder': 'asc',
+      time: '0'
+    });
+    return this.postGradeJSON(
+      'cjcx/cjjdcx_cxXsjdxmcjIndex.html?doType=query&gnmkdm=N305099',
+      form,
+      '教务系统返回了无法识别的成绩构成数据'
+    );
+  }
+
+  async getGradeComponentRows(academicYear = 0, term = 0) {
+    const firstPayload = await this.getGradeComponentPage(academicYear, term, 1);
+    const pageCount = gradePayloadPageCount(firstPayload);
+    const items = [...gradePayloadItems(firstPayload)];
+    for (let page = 2; page <= pageCount; page += 3) {
+      const pageNumbers = Array.from({ length: Math.min(3, pageCount - page + 1) }, (_, offset) => page + offset);
+      const payloads = await Promise.all(pageNumbers.map((pageNumber) => (
+        this.getGradeComponentPage(academicYear, term, pageNumber)
+      )));
+      for (const payload of payloads) items.push(...gradePayloadItems(payload));
+    }
+    return normalizeGradeDetailItems(items);
   }
 
   async getGradeDetailRows(academicYear = 0, term = 0) {
