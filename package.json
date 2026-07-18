@@ -1,0 +1,59 @@
+{
+  "name": "cumt-schedule-desktop",
+  "version": "1.0.0",
+  "description": "中国矿业大学正方教务桌面课表与成绩工具",
+  "main": "src/main.js",
+  "author": "CUMT Schedule Desktop",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^37.2.3",
+    "electron-builder": "^26.0.12",
+    "playwright": "1.57.0"
+  },
+  "build": {
+    "appId": "cn.edu.cumt.schedule.desktop",
+    "productName": "矿大课表",
+    "asar": true,
+    "asarUnpack": [
+      "src/native/*.ps1"
+    ],
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "CUMT-Schedule-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "矿大课表",
+      "uninstallDisplayName": "矿大课表"
+    }
+  },
+  "dependencies": {
+    "xlsx": "0.18.5"
+  }
+}
