@@ -81,6 +81,27 @@
 
 今天无课时，今日桌面不会自动展示明天、下一教学日或其他周次的课程，避免把预览误认为当天安排。
 
+> [!NOTE]
+> 下列图片由自动化测试使用虚构课程生成，仅用于展示软件界面，不包含真实学号、账号、课表、成绩或其他个人信息。出于隐私考虑，仓库不展示成绩页面截图。
+
+### 完整周课表
+
+<p align="center">
+  <img src="artifacts/light-schedule.png" alt="使用虚构课程生成的完整周课表演示" width="1100">
+</p>
+
+### 个性化设置
+
+<p align="center">
+  <img src="artifacts/personalization.png" alt="使用模拟数据展示的课表个性化设置" width="1100">
+</p>
+
+### 今日无课状态
+
+<p align="center">
+  <img src="artifacts/empty-widget.png" alt="今日没有课程时保持空白的桌面组件演示" width="420">
+</p>
+
 ### 桌面体验
 
 - 7 天周视图、周次快捷切换、当前时间线和课程详情；
